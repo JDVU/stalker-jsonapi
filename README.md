@@ -39,11 +39,11 @@ stalker_path
 7) If you use Stalker DVR, you need fix  dumpstream script:
 ```
 mv /var/www/stalker_portal/storage/dumpstream /var/www/stalker_portal/storage/dumpstream.backup
-ln -s  /%anypath%/tvip-jsonapi-plugin/dumpstream.py /var/www/stalker_portal/storage/dumpstream
+ln -s /var/www/jsonapi/dumpstream.py /var/www/stalker_portal/storage/dumpstream
 
 ```
-for applying new dumpstream you need to restart dumpstream.
-
-For connection from TVIP STB: use  Middleware API and http://<stalker_server>/ or http://<stalker_server>/stalker_portal. 
-
-Device will search /tvipapi path after main URL
+8) Run for db migration
+```
+cd /var/www/jsonapi/tvipapi
+php migrate.php update
+```

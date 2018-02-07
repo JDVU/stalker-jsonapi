@@ -23,7 +23,6 @@ class DvrServerFlussonic extends DvrServer
         return $url;
     }
 
-
     /**
      * @return string
      */

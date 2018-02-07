@@ -41,7 +41,7 @@ class DeviceApiController extends AbstractController
 {
     const REGISTER_TYPE = 'login';
     const SESSION_TYPE = 'token';
-    
+
     /**
      * @var array
      */
@@ -387,7 +387,6 @@ class DeviceApiController extends AbstractController
         }
     }
 
-    
     /**
      * @return PollType
      */
@@ -420,7 +419,7 @@ class DeviceApiController extends AbstractController
      * @param int $code
      * @return JsonResponse
      */
-    
+
 
     private function getFavorites()
     {
