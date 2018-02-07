@@ -4,9 +4,6 @@
 #EXT-X-MEDIA-SEQUENCE:<?php printf("%d\n",$count); ?>
 <?php
 
-/**
- * @var $segments \Model\archive\Segment[]
- */
 foreach ($segments as $segment) {
     $format = "#EXTINF:%f,\n";
     $format_bytes = "#EXT-X-BYTERANGE:%s@%s\n";

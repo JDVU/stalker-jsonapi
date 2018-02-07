@@ -31,14 +31,16 @@ use Response\UserInfoResponse;
 use Response\vod\VodTagListResponse;
 use Type\PollType;
 use Type\ShortEpgType;
+use Utils\DvrServerLoadBalancer;
+use Utils\ORM;
 use Utils\PoTranslator;
 use Utils\QueryBuilder;
 
 
 class DeviceApiController extends AbstractController
 {
-    const REGISTER_TYPE='login';
-    const SESSION_TYPE='token';
+    const REGISTER_TYPE = 'login';
+    const SESSION_TYPE = 'token';
     
     /**
      * @var array
@@ -66,7 +68,8 @@ class DeviceApiController extends AbstractController
      * @link https://en.wikipedia.org/wiki/Cross-origin_resource_sharing
      * @return JsonResponse
      */
-    public function preflightAction(){
+    public function preflightAction()
+    {
         return new RequestResponse('preflight', 200, new PreflightResponse());
     }
 
@@ -87,7 +90,7 @@ class DeviceApiController extends AbstractController
             array() //cas types
         );
 
-        return new RequestResponse('server_info',200,$serverInfoResponse);
+        return new RequestResponse('server_info', 200, $serverInfoResponse);
     }
 
     /**
@@ -95,21 +98,16 @@ class DeviceApiController extends AbstractController
      */
     public function authAction()
     {
-        if(!$this->device->getId() && !$this->authUrl){
+        if (!$this->device->getId() && !$this->authUrl) {
 
             $this->registered = true;
             $this->device->setLastActive(new \DateTime());
 
             $this->device->save();
             $this->device->generateUniqueToken();
-            if($this->getSafe('default_stb_status',0)==0){
-                $this->device->setStatus(false); // inversed status, true = off, false = on
-            }else{
-                $this->device->setStatus(true);
-            }
 
-            $query = QueryBuilder::query('SELECT id FROM tariff_plan WHERE user_default=1 LIMIT 0,1');
-            if($query->num_rows>0){
+            $query = QueryBuilder::query('SELECT id FROM tariff_plan WHERE user_default = 1 LIMIT 0,1');
+            if ($query->num_rows > 0) {
                 $result = $query->fetch_assoc();
                 $this->device->setTariffPlanId($result['id']);
             }
@@ -117,7 +115,11 @@ class DeviceApiController extends AbstractController
         }
 
 
-        if(!$this->device->getAccessToken()) throw  new DeviceApiRegistrationRequiredException('Need registration');
+        //if (!$this->device->getAccessToken()) throw  new DeviceApiRegistrationRequiredException('Need registration');
+        if (!$this->device->getAccessToken()){
+           $this->device->generateUniqueToken();
+           $this->device->save();
+        }
 
         $authResponse = new AuthResponse(
             $this->registered,
@@ -128,7 +130,7 @@ class DeviceApiController extends AbstractController
         $code = 200;
 
 
-        return new RequestResponse('auth',$code,$authResponse);
+        return new RequestResponse('auth', $code, $authResponse);
     }
 
     /**
@@ -142,47 +144,47 @@ class DeviceApiController extends AbstractController
 
         $registerResponse = new RegisterResponse(null);
         $content = $this->request->getContent();
-        $json= json_decode($content);
-        if($json && strlen($content)>0){
-            if(!property_exists($json,'login') || !property_exists($json,'password')) throw  new DeviceApiIncorrectCredintialsExcption('login and password fields not found');
+        $json = json_decode($content);
+        if ($json && strlen($content) > 0) {
+            if (!property_exists($json, 'login') || !property_exists($json, 'password')) throw  new DeviceApiIncorrectCredintialsExcption('login and password fields not found');
             $login = $json->login;
             $password = $json->password;
 
-            if($this->device->getId() && $this->device->getLogin() == $login && $this->device->checkPassword($password)){
-                $this->registered=true;
+            if ($this->device->getId() && $this->device->getLogin() == $login && $this->device->checkPassword($password)) {
+                $this->registered = true;
 
                 $this->device->generateUniqueToken();
                 $this->device->save();
 
-                $registerResponse->token=$this->device->getAccessToken();
-            }else{
-                $sql = 'SELECT id FROM users WHERE login = \''.$login.'\' AND password = MD5(CONCAT(\''.md5($password).'\',id)) AND mac =\'\' LIMIT 0,1';
+                $registerResponse->token = $this->device->getAccessToken();
+            } else {
+                $sql = 'SELECT id FROM users WHERE login = \'' . $login . '\' AND password = MD5(CONCAT(\'' . md5($password) . '\',id)) AND mac =\'\' LIMIT 0,1';
 
                 $query = QueryBuilder::query($sql);
-                if($query->num_rows==1){
-                    $this->registered=true;
+                if ($query->num_rows == 1) {
+                    $this->registered = true;
                     $result = $query->fetch_assoc();
                     $mac = $this->device->getMac();
-                    if($this->device->getId()){
+                    if ($this->device->getId()) {
                         $this->device->setMac(null);
                         $this->device->save();
                     }
-                    $this->device= new Device($result['id']);
+                    $this->device = new Device($result['id']);
                     $this->device->setMac($mac);
                     $this->device->save();
                     $this->device->generateUniqueToken();
                     $this->device->save();
                     $registerResponse->token = $this->device->getAccessToken();
-                } else{
+                } else {
                     throw new DeviceApiIncorrectCredintialsExcption('Login or password is incorrect');
                 }
 
             }
-        }else{
+        } else {
             throw new DeviceApiIncorrectCredintialsExcption('Login or password is incorrect');
         }
 
-        return new RequestResponse('register',200,$registerResponse);
+        return new RequestResponse('register', 200, $registerResponse);
     }
 
     /**
@@ -192,11 +194,11 @@ class DeviceApiController extends AbstractController
      */
     public function unregisterAction()
     {
-        if(!$this->registered) throw new DeviceApiRegistrationRequiredException('Registration requied');
-        $this->device->setMac(null);
+        if (!$this->registered) throw new DeviceApiRegistrationRequiredException('Registration requied');
+        //$this->device->setMac(null);
         $this->device->setAccessToken(null);
         $this->device->save();
-        return new RequestResponse('unregister',200,new UnregisterResponse());
+        return new RequestResponse('unregister', 200, new UnregisterResponse());
     }
 
     /**
@@ -204,8 +206,9 @@ class DeviceApiController extends AbstractController
      * @return JsonResponse
      * @throws DeviceApiRegistrationRequiredException
      */
-    public function userInfoAction(){
-        if(!$this->registered) throw new DeviceApiRegistrationRequiredException('Registration required');
+    public function userInfoAction()
+    {
+        if (!$this->registered) throw new DeviceApiRegistrationRequiredException('Registration required');
 
         $userInfoResponse = new UserInfoResponse(
             $this->device->getFullname(),
@@ -215,7 +218,7 @@ class DeviceApiController extends AbstractController
             0
         );
 
-        return new RequestResponse('user_info',200,$userInfoResponse);
+        return new RequestResponse('user_info', 200, $userInfoResponse);
 
     }
 
@@ -225,8 +228,8 @@ class DeviceApiController extends AbstractController
      */
     public function channelsAction()
     {
-        $baseLogoUrl = isset($this->config['stalker_host']) ? 'http://'.$this->config['stalker_host']: 'http://'.$_SERVER['SERVER_NAME'];
-        $baseLogoUrl = $baseLogoUrl.'/stalker_portal/misc/logos/240/';
+        $baseLogoUrl = isset($this->config['stalker_host']) ? 'http://' . $this->config['stalker_host'] : 'http://' . $_SERVER['SERVER_NAME'];
+        $baseLogoUrl = $baseLogoUrl . '/stalker_portal/misc/logos/240/';
         $channelsResponse = new ChannelsResponse(
             0,//channel version, TODO: check channel version change
             0,//epg version
@@ -239,7 +242,7 @@ class DeviceApiController extends AbstractController
 
         );
 
-        return new RequestResponse('channels',200,$channelsResponse);
+        return new RequestResponse('channels', 200, $channelsResponse);
     }
 
     /**
@@ -249,25 +252,25 @@ class DeviceApiController extends AbstractController
      */
     public function epgAction($channelId, $date)
     {
-        $date = str_replace(".json","",$date);
+        $date = str_replace(".json", "", $date);
 
         /**
          * @var $channel Channel
          */
         $channel = new Channel($channelId);
 
-        if(!$channel){
-            throw new DeviceApiNotFoundException('Channel with id'.$channelId.' not found');
+        if (!$channel) {
+            throw new DeviceApiNotFoundException('Channel with id' . $channelId . ' not found');
         }
         $startDateTime = new \DateTime($date);
-        $startDateTime->setTime(0,0,0);
+        $startDateTime->setTime(0, 0, 0);
         $endDateTime = clone ($startDateTime);
-        $endDateTime->setTime(23,59,59);
+        $endDateTime->setTime(23, 59, 59);
 
-        $sql = 'SELECT id FROM epg WHERE ch_id='.$channel->getId().' AND time >= \''.$startDateTime->format('c').'\' AND time <= \''.$endDateTime->format('c').'\'';
+        $sql = 'SELECT id FROM epg WHERE ch_id=' . $channel->getId() . ' AND time >= \'' . $startDateTime->format('c') . '\' AND time <= \'' . $endDateTime->format('c') . '\'';
         $result = QueryBuilder::query($sql);
         $events = array();
-        while($row = $result->fetch_assoc()){
+        while ($row = $result->fetch_assoc()) {
             array_push($events, new EpgItem($row['id']));
         }
 
@@ -280,38 +283,40 @@ class DeviceApiController extends AbstractController
         );
 
 
-        if(count($epgResponse->events)==0) throw new DeviceApiNotFoundException('Events not found');
-        return new RequestResponse('epg',200,$epgResponse);
+        if (count($epgResponse->events) == 0) throw new DeviceApiNotFoundException('Events not found');
+        return new RequestResponse('epg', 200, $epgResponse);
     }
 
     /**
      * @link http://wiki.tvip.ru/private/json_api#short_epg_download
      * @return JsonResponse
      */
-    public function shortEpgAction(){
+    public function shortEpgAction()
+    {
         $channels = array();
-        foreach($this->getChannels() as $channel){
-            array_push($channels,new ShortEpgType($channel));
+        foreach ($this->getChannels() as $channel) {
+            array_push($channels, new ShortEpgType($channel));
         }
-        $response = new ShortEpgResponse(1,$channels,array());
-        return new RequestResponse('short_epg',200,$response);
+        $response = new ShortEpgResponse(1, $channels, array());
+        return new RequestResponse('short_epg', 200, $response);
 
     }
 
 
-    public function channelShortEpgAction($channelId){
+    public function channelShortEpgAction($channelId)
+    {
 
         /**
          * @var $channel Channel
          */
 
         $channel = new Channel($channelId);
-        if(!$channel){
-            throw new DeviceApiNotFoundException('Channel with id'.$channelId.' not found');
+        if (!$channel) {
+            throw new DeviceApiNotFoundException('Channel with id' . $channelId . ' not found');
         }
         $channels = array(new ShortEpgType($channel));
-        $response = new ShortEpgResponse(1,$channels,$this->ageGroups);
-        return new RequestResponse('short_epg',200,$response);
+        $response = new ShortEpgResponse(1, $channels, $this->ageGroups);
+        return new RequestResponse('short_epg', 200, $response);
 
     }
 
@@ -326,38 +331,73 @@ class DeviceApiController extends AbstractController
          */
         $commands = array();
 
-        $query = QueryBuilder::query('SELECT id FROM events WHERE uid='.$this->device->getId().' AND ended=0 AND sended=0');
+        $query = QueryBuilder::query('SELECT id FROM events WHERE uid=' . $this->device->getId() . ' AND ended=0 AND sended=0');
 
-        if($query->num_rows>0){
-            while($row = $query->fetch_assoc()){
+        if ($query->num_rows > 0) {
+            while ($row = $query->fetch_assoc()) {
                 array_push($commands, new Command($row['id']));
             }
         }
-        $messagesResponse = new MessagesResponse($this->getPoll(),$commands);
-        foreach ($commands as $command){
+        $messagesResponse = new MessagesResponse($this->getPoll(), $commands);
+        foreach ($commands as $command) {
             $command->setSended(1);
             $command->setEnded(1);
             $command->save();
         }
-        return new RequestResponse('messages',200,$messagesResponse);
+        return new RequestResponse('messages', 200, $messagesResponse);
     }
 
 
-    public function postMessagesAction(){
+    public function postMessagesAction()
+    {
 
-        $messagesResponse = new MessagesResponse($this->getPoll(),array());
-        return new RequestResponse('messages',200,$messagesResponse);
+        $statistic = json_decode(file_get_contents('php://input'));
+        $this->saveStatistic($statistic);
+
+        $messagesResponse = new MessagesResponse($this->getPoll(), array());
+        return new RequestResponse('messages', 200, $messagesResponse);
     }
+
+
+    private function saveStatistic($statistic)
+    {
+        if ($statistic->messages) {
+            foreach ($statistic->messages as $message) {
+
+                if ($message->command == 'channel_view_stat') {
+
+                    $channel_storage = ORM::for_table('tvip_device_storage')->where([
+                        'device_id' => $this->device->getId(),
+                        'channel_id' => $message->args->channel_id
+                    ])->find_one();
+
+                    $device_storage = ORM::for_table('users')->find_one($this->device->getId());
+
+                    $channel = ORM::for_table('itv')->find_one($message->args->channel_id);
+
+                    if (empty($channel_storage) OR empty($device_storage) OR empty($channel)) return;
+
+                    $device_storage->now_playing_type = 2;
+                    $device_storage->hd_content = $channel->hd;
+                    $device_storage->storage_name = $channel_storage->storage_name;
+                    $device_storage->keep_alive = date("Y-m-d H:i:s", time());
+                    $device_storage->save();
+                }
+            }
+        }
+    }
+
     
     /**
      * @return PollType
      */
-    private function getPoll(){
+    private function getPoll() 
+    {
         $poll =  new PollType();
         $poll->interval = 60;
-        $r = hexdec(str_replace(':','',$this->device->getMac())) % 100;
-        if($r==0) $r=100;
-        $poll->timeslot = $r*0.01;
+        $r = hexdec(str_replace(':', '', $this->device->getMac())) % 100;
+        if ($r == 0) $r = 100;
+        $poll->timeslot = $r * 0.01;
 
         return $poll;
     }
@@ -365,14 +405,14 @@ class DeviceApiController extends AbstractController
     /**
      * @return string hash of available channels
      */
-/*    private function getChannelsHash(){
-        $ids = array();
-        foreach($this->getChannels() as $channel){
-            array_push($ids,$channel->getId());
-        }
-        sort($ids);
-        return md5(implode(';', $ids));
-    }*/
+    /*    private function getChannelsHash(){
+            $ids = array();
+            foreach($this->getChannels() as $channel){
+                array_push($ids,$channel->getId());
+            }
+            sort($ids);
+            return md5(implode(';', $ids));
+        }*/
 
     /**
      * Return response with all needed headers
@@ -382,11 +422,12 @@ class DeviceApiController extends AbstractController
      */
     
 
-    private function getFavorites(){
-        if(count($this->favorites)==0){
+    private function getFavorites()
+    {
+        if (count($this->favorites) == 0) {
             $result = QueryBuilder::query('SELECT id FROM tv_genre');
 
-            while ($row = $result->fetch_assoc()){
+            while ($row = $result->fetch_assoc()) {
                 array_push($this->favorites, new FavoriteGroup($row['id']));
             }
 
@@ -394,31 +435,30 @@ class DeviceApiController extends AbstractController
         return $this->favorites;
     }
 
-    private function getChannels(){
+    private function getChannels()
+    {
+        if (count($this->channels) == 0 && $this->device->isEnabled()) {
+            foreach ($this->getChannelsIds() as $id) {
 
-        if(count($this->channels)==0 && $this->device->isEnabled()){
-            foreach ($this->getChannelsIds() as $id){
-                array_push($this->channels, new Channel($id));
+                $dvrServerBalancer = new DvrServerLoadBalancer(new Channel($id), $this->config, $this->device);
+
+                array_push($this->channels, $dvrServerBalancer->getChannel());
             }
         }
         return $this->channels;
-
     }
 
-   
-
-
-    public function getChannelsIds() {
-
+    public function getChannelsIds()
+    {
         //если включены тарифные планы и выключена подписка тв на тарифных планах
-        if ($this->getSafe('enable_tariff_plans', false) && !$this->getSafe('enable_tv_subscription_for_tariff_plans', false)){
+        if ($this->getSafe('enable_tariff_plans', false) && !$this->getSafe('enable_tv_subscription_for_tariff_plans', false)) {
 
             $subscription = $this->device->getServicesByType();
-            if (empty($subscription)){
+            if (empty($subscription)) {
                 $subscription = array();
             }
             $channel_ids = $subscription;
-        }else{
+        } else {
             $channel_ids = array_unique(
                 array_merge(
                     $this->device->getSubscriptionChannelsIds(),
@@ -428,22 +468,20 @@ class DeviceApiController extends AbstractController
             );
         }
 
-
-        if($channel_ids == 'all'){
-            $channel_ids=array();
+        if ($channel_ids == 'all') {
+            $channel_ids = array();
             $query = QueryBuilder::query('SELECT id FROM itv');
-            while($row=$query->fetch_assoc()){
-                array_push($channel_ids,$row['id']);
+            while ($row = $query->fetch_assoc()) {
+                array_push($channel_ids, $row['id']);
             }
 
         }
-
         return $channel_ids;
     }
 
 
-
-    public function isRegistered(){
+    public function isRegistered()
+    {
         return $this->registered;
     }
 
