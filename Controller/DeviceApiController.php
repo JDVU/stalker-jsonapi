@@ -105,13 +105,8 @@ class DeviceApiController extends AbstractController
 
             $this->device->save();
             $this->device->generateUniqueToken();
-            if ($this->getSafe('default_stb_status', 0) == 0) {
-                $this->device->setStatus(false); // inversed status, true = off, false = on
-            } else {
-                $this->device->setStatus(true);
-            }
 
-            $query = QueryBuilder::query('SELECT id FROM tariff_plan WHERE user_default=1 LIMIT 0,1');
+            $query = QueryBuilder::query('SELECT id FROM tariff_plan WHERE user_default = 1 LIMIT 0,1');
             if ($query->num_rows > 0) {
                 $result = $query->fetch_assoc();
                 $this->device->setTariffPlanId($result['id']);
@@ -120,7 +115,11 @@ class DeviceApiController extends AbstractController
         }
 
 
-        if (!$this->device->getAccessToken()) throw  new DeviceApiRegistrationRequiredException('Need registration');
+        //if (!$this->device->getAccessToken()) throw  new DeviceApiRegistrationRequiredException('Need registration');
+        if (!$this->device->getAccessToken()){
+           $this->device->generateUniqueToken();
+           $this->device->save();
+        }
 
         $authResponse = new AuthResponse(
             $this->registered,
@@ -196,7 +195,7 @@ class DeviceApiController extends AbstractController
     public function unregisterAction()
     {
         if (!$this->registered) throw new DeviceApiRegistrationRequiredException('Registration requied');
-        $this->device->setMac(null);
+        //$this->device->setMac(null);
         $this->device->setAccessToken(null);
         $this->device->save();
         return new RequestResponse('unregister', 200, new UnregisterResponse());
@@ -391,9 +390,9 @@ class DeviceApiController extends AbstractController
     /**
      * @return PollType
      */
-    private function getPoll()
+    private function getPoll() 
     {
-        $poll = new PollType();
+        $poll =  new PollType();
         $poll->interval = 60;
         $r = hexdec(str_replace(':', '', $this->device->getMac())) % 100;
         if ($r == 0) $r = 100;
@@ -437,7 +436,6 @@ class DeviceApiController extends AbstractController
 
     private function getChannels()
     {
-
         if (count($this->channels) == 0 && $this->device->isEnabled()) {
             foreach ($this->getChannelsIds() as $id) {
 
@@ -447,13 +445,10 @@ class DeviceApiController extends AbstractController
             }
         }
         return $this->channels;
-
     }
-
 
     public function getChannelsIds()
     {
-
         //если включены тарифные планы и выключена подписка тв на тарифных планах
         if ($this->getSafe('enable_tariff_plans', false) && !$this->getSafe('enable_tv_subscription_for_tariff_plans', false)) {
 
@@ -472,7 +467,6 @@ class DeviceApiController extends AbstractController
             );
         }
 
-
         if ($channel_ids == 'all') {
             $channel_ids = array();
             $query = QueryBuilder::query('SELECT id FROM itv');
@@ -481,7 +475,6 @@ class DeviceApiController extends AbstractController
             }
 
         }
-
         return $channel_ids;
     }
 

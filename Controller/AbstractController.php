@@ -67,7 +67,6 @@ abstract class AbstractController {
 
         $mac = strtoupper($request->getHeaderParam('Mac-Address'));
 
-
         if(preg_match("/([a-fA-F0-9]{2}[:|\-]?){6}/",$mac,$matches)) {
             $mac = $matches[0];
         }

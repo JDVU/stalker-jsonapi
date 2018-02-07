@@ -342,8 +342,9 @@ class Device extends ActiveRecord
             LEFT JOIN package_in_plan pip ON (pip.plan_id=tp.id)
             LEFT JOIN service_in_package sip ON (sip.package_id=pip.package_id AND sip.type=\'tv\')
             LEFT JOIN itv  ON (itv.id=sip.service_id)
-            WHERE u.id=
-            '.$this->id;
+            WHERE itv.status = 1 AND u.id =
+            '.$this->id.'
+            ORDER BY itv.number';
 
             $result = QueryBuilder::query($sql);
 
