@@ -367,7 +367,7 @@ class Device extends ActiveRecord
     public function getBaseChannelsIds(){
 
         $array = array();
-        $query = QueryBuilder::query('SELECT id FROM itv WHERE base_ch=1');
+        $query = QueryBuilder::query('SELECT id FROM itv WHERE base_ch=1 AND status = 1');
 
         while($row = $query->fetch_assoc()){
             array_push($array,$row['id']);
@@ -407,7 +407,7 @@ class Device extends ActiveRecord
 
         if($query->num_rows==0){
             $return = array();
-            $query = QueryBuilder::query('SELECT id FROM itv WHERE base_ch=0');
+            $query = QueryBuilder::query('SELECT id FROM itv WHERE base_ch=0 AND status = 1');
             while($row=$query->fetch_assoc()){
                 array_push($return,$row['id']);
             }

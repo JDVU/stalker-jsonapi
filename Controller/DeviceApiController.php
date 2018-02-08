@@ -469,7 +469,7 @@ class DeviceApiController extends AbstractController
 
         if ($channel_ids == 'all') {
             $channel_ids = array();
-            $query = QueryBuilder::query('SELECT id FROM itv');
+            $query = QueryBuilder::query('SELECT id FROM itv WHERE status = 1');
             while ($row = $query->fetch_assoc()) {
                 array_push($channel_ids, $row['id']);
             }
